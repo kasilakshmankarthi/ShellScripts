@@ -1,0 +1,1 @@
+echo 100 > /dev/stune/top-app/schedtune.boost

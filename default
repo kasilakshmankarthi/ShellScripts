@@ -1,0 +1,4 @@
+cd /data/local/tmp/bin
+./minlock_reset
+./offline7_reset
+./ta100_reset

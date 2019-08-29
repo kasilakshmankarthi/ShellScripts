@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="user-scalable=no, width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+        <script>
+            /* start measuring how long we are in app, bypassing the
+MessagingService and talking to
+            bridge directly (if available) */
+            var sendMessage = function(){
+            };
+
+            if(window.AndroidJsBridge && window.AndroidJsBridge.sendMessage){
+                sendMessage = function(msg){
+                    window.AndroidJsBridge.sendMessage(JSON.stringify(msg));
+                };
+
+                window.appStart = Date.now();
+
+                sendMessage({
+                    "id":"store-metric",
+                    "type":"broadcast",
+                    "name":"metric",
+                    "options":
+                    {
+                        "name":"mp3StoreStartupTime-start",
+                        "start":window.appStart
+                    }
+                });
+            }
+
+            /* used to override relative path during dev */
+            var URL_PREFIX = "";
+
+            /* fields required to make Cirrus requests */
+            window.amznMusic = window.amznMusic || { };
+            window.amznMusic.marketplaceID = '1';
+            window.amznMusic.encryptedMarketplaceID = 'ATVPDKIKX0DER';
+            window.amznMusic.enableRequestSigning = false;
+            window.amznMusic.customerInfo =
+{"tid":"","did":"","dtid":"","associateTag":"","requestSigningKey":""};
+
+            /* fetch campaigns as early as possible if the user is
+going to the store-front */
+            if ((window.location.hash == "" &&
+/home$|store\/$/.test(window.location.pathname)) ||
+/home$|store\/$/.test(window.location.hash)) {
+                var xmlHttp = new XMLHttpRequest();
+                amznMusic.prefetchedStorefrontData = {
+                    campaigns: {
+                        'campaignsLoadedCallback': undefined
+                    }
+                };
+
+                var campaignsUrl = URL_PREFIX +
+"/gp/dmusic/device/mp3/store/campaigns";
+                xmlHttp.open("GET", campaignsUrl, true);
+
+                xmlHttp.onreadystatechange = function () {
+                    if (xmlHttp.readyState === 4) {
+                        sendMessage({
+                            "id":"store-campaign-metric",
+                            "type":"broadcast",
+                            "name":"metric",
+                            "options":
+                            {
+                                "name":"mp3StoreCampaignRequest-end",
+                                "elapsed": Date.now() - window.campaignStart
+                            }
+                        });
+
+                        var results = (xmlHttp.status === 200) ?
+xmlHttp.responseText : undefined;
+
+                        if (!results) {
+                            amznMusic.prefetchedStorefrontData.failure = {
+                                httpStatus: xmlHttp.status,
+                                url: campaignsUrl
+                            };
+                        }
+
+                        if
+(amznMusic.prefetchedStorefrontData.campaigns.campaignsLoadedCallback)
+{
+
+amznMusic.prefetchedStorefrontData.campaigns.campaignsLoadedCallback(results);
+                        } else {
+
+amznMusic.prefetchedStorefrontData.campaigns.data = results;
+                        }
+                    }
+                };
+
+                window.campaignStart = Date.now();
+                sendMessage({
+                    "id":"store-campaign-metric",
+                    "type":"broadcast",
+                    "name":"metric",
+                    "options":
+                    {
+                        "name":"mp3StoreCampaignRequest-start",
+                        "start": window.campaignStart
+                    }
+                });
+                xmlHttp.send(null);
+            }
+        </script>
+
+        <link type="text/css"
+href="/browser-scripts/source/dmusic_device_store_css/button.css"
+rel="stylesheet"></link>
+<link type="text/css"
+href="/browser-scripts/source/dmusic_device_store_css/store-layout.css"
+rel="stylesheet"></link>
+<link type="text/css"
+href="/browser-scripts/source/dmusic_device_store_css/store-colors.css"
+rel="stylesheet"></link>
+<link type="text/css"
+href="/browser-scripts/source/dmusic_device_store_css/font.css"
+rel="stylesheet"></link>
+
+        <script id="genres_popup_template" type="text/html">
+    <div class="refine-wrapper">
+        <div class="refine-spacer"/>
+        <div class="refine-popup popup">
+            <div class='refine-tip popup-tip'/>
+            <div class="refine-title font-category-header"
+data-i18n="dmusic_gp_genres"></div>
+            <div id="refine-content">
+                <ul class="content-wrapper">
+                    {{^items}}
+                        <div class="genres-loading
+font-carousel-primary-text ">Loading...</div>
+                    {{/items}}
+                    {{#items.length}}
+                        <li class="refine-menuitem popup-menuitem
+font-carousel-primary-text " data-value=""
+data-i18n="dmusic_gp_all_genres"/>
+                    {{/items.length}}
+                    {{#items}}
+                        <li class="genre-title popup-menuitem
+font-carousel-primary-text " data-value="{{value}}">{{name}}</li>
+                    {{/items}}
+                </ul>
+            </div>
+        </div>
+    </div>
+</script>
+<script id="artistrow_template" type="text/html">
+    <div class='artist-index index'>{{index}}.&nbsp;</div><div
+class='artist'>{{title}}</div><div class="right-large-arrow"/>
+</script><script id="purchase_template" type="text/html">
+    <div id="purchase-header" />
+    <div id="purchase-content">
+        <div id="purchase-status" class="purchase-status" />
+        <div id="purchase-thank-you" class="purchase-thank-you" />
+    </div>
+</script>
+
+<script id="purchase_header_template" type="text/html">
+    <img class='purchase-album-art' />
+
+    <div id="purchase-header-text-container">
+        <div class='font-item-name purchase-header-text'>{{title}}</div>
+        <div class='font-item-name secondary
+purchase-header-text'>{{artist}}</div>
+        <div class='font-item-name secondary
+purchase-header-text'>{{#album}}({{album}}){{/album}}</div>
+    </div>
+</script>
+
+<script id="purchase_status_template" type="text/html">
+    <div class='font-list-item-header purchase-status-item'><div
+class="{{status1State}}" />{{status1}}</div>
+    <br />
+    <div class='font-list-item-header purchase-status-item'><div
+class="{{status2State}}" />{{status2}}</div>
+</script>
+
+<script id="purchase_thank_you_template" type="text/html">
+    <div class="font-list-item-header"
+data-i18n="dmusic_gp_goto_cloudplyr_or_dn_music_message" /><br/>
+    <div class="button-style-one font-button
+purchase-thank-you-button" id="show-in-library-button"
+data-i18n="dmusic_gp_goto_cloudplayer" /><br/>
+    <div class="button-style-two font-button
+purchase-thank-you-button" id="continue-shopping-button"
+data-i18n="dmusic_gp_continue_shopping" />
+</script>
+<script id="tabview_template" type="text/html">
+    <div class='tab-bar'>
+        {{#tabs}}
+            <div class='tab font-toggle'>
+                {{name}}
+            </div>
+        {{/tabs}}
+    </div>
+    <div class='tab-content'>
+
+    </div>
+</script>
+<script id="video_shoveler_item_template" type="text/html">
+    <a class='video-anchor'>
+        <img class='video-shovelerItem-image'/>
+        <div class='video-affordance' />
+        <div class='video-duration'>{{localizedDuration}}</div>
+    </a>
+    <div class='shoveler-content'>
+        <div class='item-title video-shoveler-item-title
+font-carousel-primary-text'>{{title}}</div>
+    </div>
+</script><script id="socialrow_template" type="text/html">
+    <div class="social-row-base">
+        <div class="social-profile-pic-cont">
+            <a href="{{userHomeUrl}}"><img
+src="{{userProfileImageUrl}}" class="social-profile-pic" /></a>
+        </div>
+        <div class="social-text-block">
+            <a href="{{userHomeUrl}}"
+class="font-sub-head-labels-pricing">{{userScreenName}}</a><br/>
+            <span class="font-detail-view-body-text
+social-tweet-text">{{{summaryText}}}</span><br/>
+            <span>
+                <span class="social-twitter-pic"></span>
+                <span class="social-time-stamp
+font-sub-head-labels-pricing">{{timeSince}}</span>
+            </span>
+        </div>
+    </div>
+</script><script id="review_summary_template" type="text/html">
+    <div class="reviews-title font-store-widget-header"
+data-i18n="dmusic_gp_customer_reviews" />
+    {{#albumTitle}}
+    <div class="reviews-album-title font-blue-text-button">{{albumTitle}}</div>
+    {{/albumTitle}}
+    <div class="reviews-summary-box">
+        <div class="reviews-summary-chart">
+            {{#reviewPercentages}}
+            <div class="reviews-chart-item stars{{stars}}">
+                <div class="reviews-stars-filter
+font-list-item-header" filter="{{filter}}">{{starsText}}</div>
+                <div class="reviews-histo-full-bar reviews-chart-item-spacing">
+                    <div class="reviews-histo-rating-bar"
+style="width: {{percentage}}px;"></div>
+                </div>
+                <div class="reviews-per-filter
+font-list-item-number">{{reviews}}</div>
+            </div>
+            {{/reviewPercentages}}
+        </div>
+        <div class="reviews-summary-stars">
+            <div class="stars-container-large reviews-right-item-spacing">
+                <div class="stars-large stars-empty-large"/>
+                <div class="stars-large stars-full-large"
+style="width: {{starPercent}}%"/>
+            </div>
+            <div class="reviews-total-reviews
+reviews-right-item-spacing
+font-blue-text-button">{{customerReviewsText}}</div>
+            <div class="font-list-item-number">{{avgRatingText}}</div>
+        </div>
+    </div>
+    {{#filterByText}}
+    <div class="reviews-sub-header">
+        <div class="font-store-widget-header">{{numberOfStarReviewsText}}</div>
+        <div class="reviews-filtered-by-container">
+            <div class="reviews-filtered-by-text
+font-block-secondary-text">{{filterByText}}</div>
+            <div class="reviews-clear-filter font-blue-text-button"
+data-i18n="dmusic_gp_clear_filter" />
+        </div>
+    </div>
+    {{/filterByText}}
+</script>
+
+<script id="reviews_list_template" type="text/html">
+    <div class="reviews-page">
+        {{#reviews}}
+        <div class="helpful-votes-row
+font-store-widget-header-subtext">{{peopleFoundHelpfulText}}</div>
+        <div class="title-stars stars-container">
+            <div class="stars stars-{{r}}"/>
+        </div>
+        <div class="title-text font-list-item-header">{{t}}</div>
+        <div class="author-row
+font-store-widget-header-subtext">{{byAuthOnDateText}}</div>
+        <div class="review-body collapsed">
+            <div class="review-text font-detail-view-body-text">{{{b}}}</div>
+            <div class="review-read-more font-blue-text-button"
+data-i18n="dmusic_gp_artist_bio_read_more" />
+        </div>
+        {{/reviews}}
+    </div>
+</script><script id="albumdetail_header_template" type="text/html">
+    <div class='album-detail-header-box'>
+        <div class='titleArtistAndReviewsLandscape'>
+            <div class='title-row'>
+                <div class='item-title album-detail-item-title
+font-item-name'>{{title}}</div>
+            </div>
+            <div class='album-detail-artist artist secondary font-item-name'>
+              {{artist}}
+            </div>
+            <div class='album-detail-releaseDate hidden secondary
+font-item-name'>&nbsp;</div>
+            <div class='item-summary-review-row'>
+              <div class="stars-container">
+                  <div class="stars stars-empty"/>
+                  <div class="stars stars-full" style="width:
+{{starPercent}}%"/>
+              </div>
+              <div class="total-review-count font-blue-text-button"/>
+            </div>
+        </div>
+        <img class='album-detail-header-art' src='{{imageLarge}}'/>
+        <div class='album-detail-header-info'>
+            <div class='titleArtistAndReviewsPortrait'>
+                <div class='title-row'>
+                    <div class='item-title album-detail-item-title
+font-item-name'>{{title}}</div>
+                </div>
+                <div class='album-detail-artist artist secondary
+font-item-name'>
+                  {{artist}}
+                </div>
+                <div class='album-detail-releaseDate hidden secondary
+font-item-name'>&nbsp;</div>
+                <div class='item-summary-review-row'>
+                  <div class="stars-container">
+                      <div class="stars stars-empty"/>
+                      <div class="stars stars-full" style="width:
+{{starPercent}}%"/>
+                  </div>
+                  <div class="total-review-count font-blue-text-button"/>
+                </div>
+            </div>
+            <div class='buy-button button-style-one font-button'>
+                <span class="buy-button-price">{{displayPrice}}</span>
+                {{#purchaseLabel}}
+                <span class="buy-button-action">{{purchaseLabel}}</span>
+                {{/purchaseLabel}}
+            </div>
+
+
+            <div class='album-detail-shop-container'>
+                <div id='album-detail-shop-link'
+class='album-detail-shop-link font-blue-text-button' />
+                <div class='album-detail-shop-link'><div
+class='blue-caret'/></div>
+            </div>
+        </div>
+    </div>
+</script>
+
+<script id="albumdetail_similar_albums_template" type="text/html">
+    <img class='album-detail-shovelerItem-album-art album-art'
+src='{{imageMedium}}'/>
+    <div class='shoveler-content'>
+        <div class='item-title font-carousel-primary-text'>{{title}}</div>
+        <div class='artist secondary
+font-detail-view-body-text-message'>{{artist}}</div>
+    </div>
+</script>
+
+<script id="albumdetail_trackrow_disc_divider_template" type="text/html">
+    <div class='album-detail-disc-divider'>
+        <div class='disc-text font-secondary-headers'>{{discText}}</div>
+    </div>
+</script>
+
+<script id="albumdetail_trackrow_template" type="text/html">
+    <div class='album-detail-sample-left'>
+        <div class="play-button-large"/>
+        <div class="time-text font-block-secondary-text"/>
+    </div>
+    <div class='results-row-view-center'>
+        <div class='primary title-row small'>
+            <div class='index font-list-item-number'>{{trackNum}}.</div>&nbsp;
+            <div class='item-title font-list-item-header'>{{title}}</div>
+        </div>
+        {{#featuredArtist}}<div id='track-artist' class='item-title
+font-sub-head-labels-pricing'>{{featuredArtist}}</div>{{/featuredArtist}}
+    </div>
+    <div class='buy-button button-style-one font-button'>
+        <span class="buy-button-price">{{price}}</span>
+        {{#purchaseLabel}}
+        <span class="buy-button-action">{{purchaseLabel}}</span>
+        {{/purchaseLabel}}
+    </div>
+</script>
+<script id="search_noresults_templates" type="text/html">
+    <div class='no-search-results'
+data-i18n="dmusic_gp_search_no_results"></div>
+</script>
+<script id="phone_navbar_template" type="text/html">
+    <div class="navbar-music">
+        <div class="navbar-logo font-header-books"
+data-i18n="dmusic_gp_music" />
+    </div>
+    <div class="navbar-center">
+        <div class="search-container">
+            <div class="search-row">
+                <input type="text" name="search-input"
+contentEditable="true" class="search-input" spellcheck="false"
+autocomplete="off"
+data-i18n="[placeholder]dmusic_gp_search_music_store"></input>
+                <div class="searchinputtail">
+                    <div class="search-icon"/>
+                </div>
+            </div>
+            <div class="search-cancel button-style-three
+font-search-button" data-i18n="dmusic_gp_search_cancel"></div>
+        </div>
+    </div>
+    <div class="navbar-settings">
+        <div class="navbar-library-text font-header">S</div>
+    </div>
+</script><script id="phone_storefront_template" type="text/html">
+    <div class="campaign-top-slots-top-border" />
+    <div id="campaign-top-promotions" />
+    <div class='storefront-nav-item font-category-header'
+destination='bestsellers' data-i18n="dmusic_gp_best_sellers" />
+    <div class='gradient-separator-full-width'></div>
+    <div class='storefront-nav-item font-category-header'
+destination='newreleases' data-i18n="dmusic_gp_new_releases" />
+    <div class='gradient-separator-full-width'></div>
+    <div class='storefront-nav-item font-category-header'
+destination='genres' data-i18n="dmusic_gp_genres" />
+    <div class='gradient-separator-full-width'></div>
+    <div id="storefront-body-center">
+
+    </div>
+    <div id='recommendation-separator'
+class='gradient-separator-full-width invisible'></div>
+    <div id='campaign-seasonal-promotions'>
+
+    </div>
+    <div class='gradient-separator-full-width'></div>
+    <div id="campaign-body-promotions">
+
+    </div>
+</script>
+
+</script>
+<script id="phone_results_tab_view_template" type="text/html">
+    <div class="results-header">
+        <div class="results-left-header">
+            <div class='results-title font-store-widget-header'>
+                {{title}}
+            </div>
+            {{#refine}}
+            <div class='refine-results font-store-widget-header-subtext'>
+                <div class='refine-down-arrow'></div>
+                <div class='refine-results-title'
+data-i18n="dmusic_gp_all_genres"/>
+            </div>
+            {{/refine}}
+        </div>
+    </div>
+    <div class='tab-bar'>
+    {{#tabs}}
+        <div class='tab font-toggle'>
+            {{name}}
+        </div>
+    {{/tabs}}
+    </div>
+    <div class='tab-content'>
+
+    </div>
+</script>
+<script id="phone_campaigntrack_template" type="text/html">
+    <img class='album-art' />
+    <div class='shoveler-content'>
+        <div class='item-title font-block-primary-text'>{{title}}</div>
+        <div class='artist font-block-secondary-text'>{{artist}}</div>
+        <div class='tertiary play-sample'>
+            <div class='play-button'/>
+            <div class='play-text font-block-secondary-text'
+data-i18n="dmusic_gp_play_sample" />
+        </div>
+        <div class='buy-button button-style-three font-button'>
+            <span class="buy-button-price">{{displayPrice}}</span>
+            {{#purchaseLabel}}
+            <span class="buy-button-action">{{purchaseLabel}}</span>
+            {{/purchaseLabel}}
+        </div>
+    </div>
+</script>
+<script id="phone_campaignalbum_template" type="text/html">
+    <img class='album-art' />
+    <div class='shoveler-content'>
+        <div class='item-title font-block-primary-text'>{{title}}</div>
+        <div class='artist font-block-secondary-text'>{{artist}}</div>
+        <div class='item-summary-review-row'>
+            <div class="stars-container">
+                <div class="stars stars-empty"/>
+                <div class="stars stars-full" style="width: {{starPercent}}%"/>
+            </div>
+            <div class="review-count font-block-secondary-text">
+                ({{totalReviewCount}})
+            </div>
+        </div>
+        <div class='buy-button button-style-three font-button'>
+            <span class="buy-button-price">{{displayPrice}}</span>
+            {{#purchaseLabel}}
+            <span class="buy-button-action">{{purchaseLabel}}</span>
+            {{/purchaseLabel}}
+        </div>
+    </div>
+</script>
+<script id="store_background_template" type="text/html">
+    <div id="background-container">
+        <div class='background-image' />
+        <div class='background-fade' />
+    </div>
+</script><script id="categories_popup_template" type="text/html">
+    <div class="refine-wrapper">
+        <div class="refine-spacer"/>
+        <div class="refine-popup popup">
+            <div class='refine-tip popup-tip'/>
+            <div class="refine-title font-category-header"
+data-i18n="dmusic_gp_categories"></div>
+            <div id="refine-content">
+                <ul class="content-wrapper">
+                    {{#items}}
+                        <div class="refine-menuitem popup-menuitem
+font-carousel-primary-text " data-value="{{value}}">{{name}}</div>
+                    {{/items}}
+                    {{^items}}
+                        <li class="refine-loading
+font-carousel-primary-text ">Loading...</div>
+                    {{/items}}
+                </ul>
+            </div>
+        </div>
+    </div>
+</script>
+<script id="single_item_campaign_template" type="text/html">
+    <div class="shoveler-header">
+        <div class="shoveler-title font-store-widget-header">{{title}}</div>
+    </div>
+    <div class="shoveler-items">
+
+    </div>
+</script>
+<script id="artistdetail_header_template" type="text/html">
+    <div class='artist-detail-header-box'>
+        {{#heroImageUrl}}
+        <div class='artist-detail-header-art-mask' style="background:
+-webkit-gradient(linear, left bottom, left top, from(#121212),
+color-stop(33%, transparent)),url({{heroImageUrl}}) no-repeat;
+background-size: 100%" />
+        {{/heroImageUrl}}
+
+        {{^heroImageUrl}}
+            {{#primaryImageUrl}}
+            <img class='artist-detail-header-art'/>
+            {{/primaryImageUrl}}
+
+            {{^primaryImageUrl}}
+            <div class='artist-detail-header-art missing-image'/>
+            {{/primaryImageUrl}}
+        {{/heroImageUrl}}
+    </div>
+</script>
+
+<script id="artistdetail_landscape_header_template" type="text/html">
+    <div class='artist-detail-landscape-header-box'>
+        <div class="artist-detail-header-info" >{{metadata.name}}</div>
+
+        {{#primaryImageUrl}}
+        <img class='artist-detail-header-art'/>
+        {{/primaryImageUrl}}
+
+        {{^primaryImageUrl}}
+        <div class='artist-detail-header-art missing-image'/>
+        {{/primaryImageUrl}}
+    </div>
+</script>
+
+<script id="artistdetail_bio_template" type="text/html">
+    <div class="artist-detail-biography">
+        <div class="title font-store-widget-header"
+data-i18n="dmusic_gp_about"/>
+        {{#dateBorn}}<div class="font-list-item-header"><span
+data-i18n="dmusic_gp_artist_bio_born"/> <span
+class="font-sub-head-labels-pricing">{{dateBorn}}</span></div>{{/dateBorn}}
+        {{#metadata.birthname}}<div
+class="font-list-item-header"><span
+data-i18n="dmusic_gp_artist_bio_birthname"/> <span
+class="font-sub-head-labels-pricing">{{metadata.birthname}}</span></div>{{/metadata.birthname}}
+        {{#metadata.nationality}}<div
+class="font-list-item-header"><span
+data-i18n="dmusic_gp_artist_bio_nationality"/> <span
+class="font-sub-head-labels-pricing">{{metadata.nationality}}</span></div>{{/metadata.nationality}}
+        {{#dateFormed}}<div class="font-list-item-header"><span
+data-i18n="dmusic_gp_artist_bio_formed"/> <span
+class="font-sub-head-labels-pricing">{{dateFormed}}</span></div>{{/dateFormed}}
+        {{#bestBiography.text}}
+            <div class="artist-detail-biography_text
+font-detail-view-body-text">{{{bestBiography.text}}}</div>
+            <div class="artist-detail-biography-read-more
+font-blue-text-button" data-i18n="dmusic_gp_artist_bio_read_more"/>
+        {{/bestBiography.text}}
+    </div>
+</script>
+
+<!-- used to display similar artists -->
+<script id="artistdetail_similar_artists_template" type="text/html">
+    <div class='artist-art'>
+        {{#thumbnailUrl}}
+        <img class='artist-detail-shovelerItem-artist-art' />
+        {{/thumbnailUrl}}
+
+        {{^thumbnailUrl}}
+        <div class='artist-detail-shovelerItem-artist-art missing-image' />
+        {{/thumbnailUrl}}
+    </div>
+    <div class='shoveler-content'>
+        <div class='artist-title font-carousel-primary-text'>{{name}}</div>
+    </div>
+</script>
+
+
+<!-- sets ordering for items on Artist Detail View -->
+<script id="artistdetail_template" type="text/html">
+    <div class='artist-detail-content'>
+
+        <div class="artist-detail-header-info"/>
+
+        <div class="artist-detail-albums"/>
+
+        <div class="artist-detail-songs"/>
+
+        <div class="artist-detail-similar-artist"/>
+
+        <div class="artist-detail-videos"/>
+
+        <div class="artist-detail-bio"/>
+
+        <div class="artist-detail-collaborations artist-detail-belongs-to"/>
+
+        <div class="artist-detail-collaborations artist-detail-band-members"/>
+
+        <div class="artist-detail-collaborations artist-detail-worked-with"/>
+
+        <div class="artist-detail-photos"/>
+
+        <div class="artist-detail-social"/>
+    </div>
+</script>
+
+<script id="artistdetail_albums_template" type="text/html">
+    <img class='album-detail-shovelerItem-album-art album-art' />
+    <div class='shoveler-content'>
+        <div class='item-title font-carousel-primary-text'>{{title}}</div>
+        <div class='artist secondary
+font-detail-view-body-text-message'>{{releaseDate}}</div>
+    </div>
+</script>
+
+<script id="artistdetail_title" type="text/html">
+    <div class="artist_title_header">
+        <div data-i18n="dmusic_gp_songs" class="title
+font-store-widget-header"/><div data-i18n="dmusic_gp_see_all"
+class="see_more font-blue-text-button"></div>
+    </div>
+</script>
+
+<!-- has worked with and belongs to -->
+<script id="artistdetail_has_worked_with_template" type="text/html">
+    <div class="title font-store-widget-header" >{{title}}</div>
+    <div class="artistdetail-collaborations-artist-cols" />
+    <div class="artistdetail_see_more
+font-blue-text-button">{{seeMoreLabel}}</div>
+</script>
+
+<script id="artistdetail_collaborations_artist_template" type="text/html">
+    <div class="artistdetail-collaborations-artist">
+        <div class="artistdetail-collaborations-artist-details">
+            <div class="artistdetail-collaborations-artist-info"
+contributorAsin="{{contributorAsin}}">
+                <div class='artist-art'>
+                    {{#thumbnailUrl}}
+                    <img class='artistdetail-collaborations-artist-art' />
+                    {{/thumbnailUrl}}
+
+                    {{^thumbnailUrl}}
+                    <div class='artistdetail-collaborations-artist-art
+missing-image' />
+                    {{/thumbnailUrl}}
+
+                </div>
+                <div class='artist-content'>
+                    <div class='artist-title
+font-carousel-primary-text'>{{name}}</div>
+                    <div class='artist-membership
+font-detail-view-body-text-message'>
+                        {{^membershipEnd}}<span
+data-i18n="dmusic_gp_artist_bio_bandmembers_current" />
+{{/membershipEnd}}
+                        {{#membershipStart}}
+                        {{#membershipEnd}}
+                            {{membershipStart}} - {{membershipEnd}}
+                        {{/membershipEnd}}
+                        {{/membershipStart}}
+                    </div>
+                    <div class='artist-role
+font-detail-view-body-text-message'>{{role}}</div>
+                </div>
+            </div>
+            <div class="artistdetail-collaborations-artist-albums">
+                {{#works}}
+                    <div
+class='artistdetail-collaborations-artist-albums-artist'
+asin="{{asin}}">
+                        {{#thumbnail}}
+                        <img
+class='artistdetail-collaborations-artist-albums-artist-album-art
+album-art' src='{{thumbnail}}'/>
+                        {{/thumbnail}}
+                        {{^thumbnail}}
+                        <div
+class='artistdetail-collaborations-artist-albums-artist-album-art
+album-art missing-image' />
+                        {{/thumbnail}}
+
+                        <div
+class='artistdetail-collaborations-artist-albums-artist-content'>
+                            <div class='item-title
+font-carousel-primary-text'>{{title}}</div>
+                        </div>
+                    </div>
+                {{/works}}
+                <div class="see_more font-blue-text-button"
+data-i18n="dmusic_gp_artist_bio_more_albums"></div>
+            </div>
+        </div>
+    </div>
+</script>
+
+<script id="photo_shoveler_item_template" type="text/html">
+    {{#thumbnailUrl}}
+    <img class='artistdetail-collaborations-artist-art' />
+    {{/thumbnailUrl}}
+    {{^thumbnailUrl}}
+    <div class='artistdetail-collaborations-artist-art missing-image' />
+    {{/thumbnailUrl}}
+</script>
+
+<script id="artistdetail_social_template" type="text/html">
+    <div class="artist_title_header">
+        <div data-i18n="dmusic_gp_social" class="title
+font-store-widget-header"/>
+    </div>
+    <div class="artistdetail-social-list-part-one" />
+    <div class="artistdetail-social-list-part-two" />
+    <div class="artistdetail-social-toggle-posts font-blue-text-button
+invisible" data-i18n="dmusic_gp_more_posts"/>
+</script>
+<script id="trackrow_template" type="text/html">
+    <div class='results-row-left'>
+        <img class='album-art' />
+    </div>
+
+    <div class='results-row-view-center'>
+        <div class='primary title-row'>
+            <div class='index font-list-item-number'>{{index}}.</div>&nbsp;
+            <div class='item-title font-list-item-header'>{{title}}</div>
+        </div>
+        <div class='artist secondary
+font-sub-head-labels-pricing'>{{artist}}</div>
+        <div class='play-sample'>
+            <div class='play-button'/>
+            <div class='play-text font-sub-head-labels-pricing'
+data-i18n="dmusic_gp_play_sample" />
+        </div>
+    </div>
+    <div class='buy-button button-style-one font-button'>
+        <span class="buy-button-price">{{displayPrice}}</span>
+        {{#purchaseLabel}}
+        <span class="buy-button-action">{{purchaseLabel}}</span>
+        {{/purchaseLabel}}
+    </div>
+</script>
+
+<script id="artistdetail_track_row" type="text/html">
+    <div class='results-row-left'>
+        <img class='album-art' src='{{image}}'/>
+    </div>
+
+    <div class='results-row-view-center'>
+        <div class='primary title-row'>
+            <div class='index font-list-item-number'>{{index}}.</div>&nbsp;
+            <div class='item-title font-list-item-header'>{{title}}</div>
+        </div>
+        <div class='album secondary
+font-sub-head-labels-pricing'>{{album}}</div>
+        <div class='tertiary play-sample'>
+            <div class='play-button'/>
+            <div class='play-text font-sub-head-labels-pricing'
+data-i18n="dmusic_gp_play_sample" />
+        </div>
+    </div>
+    <div class='buy-button button-style-one font-button'>
+        <span class="buy-button-price">{{displayPrice}}</span>
+        {{#purchaseLabel}}
+        <span class="buy-button-action">{{purchaseLabel}}</span>
+        {{/purchaseLabel}}
+    </div>
+</script>
+<script id="albumrow_template" type="text/html">
+    <img class='album-art' />
+    <div class='results-row-view-center'>
+        <div class="results-title-row">
+            <div class='primary title-row'>
+                <div class='index font-list-item-number'>{{index}}.</div>&nbsp;
+                <div class='item-title font-list-item-header'>{{title}}</div>
+            </div>
+        </div>
+        <div class='artist secondary
+font-sub-head-labels-pricing'>{{artist}}</div>
+        <div class='item-summary-review-row'>
+            <div class="stars-container">
+                <div class="stars stars-empty"/>
+                <div class="stars stars-full" style="width: {{starPercent}}%"/>
+            </div>
+            <div class="review-count font-sub-head-labels-pricing">
+                ({{totalReviewCount}})
+            </div>
+        </div>
+    </div>
+    <div class='buy-button button-style-one font-button'>
+        <span class="buy-button-price">{{displayPrice}}</span>
+        {{#purchaseLabel}}
+        <span class="buy-button-action">{{purchaseLabel}}</span>
+        {{/purchaseLabel}}
+    </div>
+</script>
+<script id="notifications_template" type="text/html">
+    <div class="modal-dialog">
+        <div class="dlg-title">{{title}}</div>
+        <div class="dlg-body">{{{body}}}</div>
+        <div class="dlg-exception {{^exception}}invisible{{/exception}}"></div>
+
+        <div class="buttons-container">
+            {{#buttons}}
+            <div class="{{id}} button-style-three dialog-button">{{title}}</div>
+            {{/buttons}}
+        </div>
+    </div>
+</script>
+<script id="performance_info_template" type="text/html">
+      <div>render time: <span
+class='performance-info-timing'>{{timing}}</span> ms<div>
+      <div>Number of HTML element: <span
+class='performance-info-timing'>{{numberElement}}</span></div>
+      <pre class='performance-info-details'>{{tree}}</pre>
+</script>
+<script id="genre_row_template" type="text/html">
+    <div class='genre-row-view-center'>
+        <div class='primary title-row'>
+            <div class='item-title font-list-item-header'>{{name}}</div>
+            <div class="right-large-arrow"/>
+        </div>
+        <div class='secondary
+font-sub-head-labels-pricing'>{{viewAllText}}</div>
+    </div>
+</script>
+<script id="rowview_template" type="text/html">
+    <img class='album-art' />
+    <div class='results-row-view-center'>
+        <div class='primary title-row'>
+            <div class='index'>{{index}}</div>&nbsp;
+            <div class='item-title'>{{title}}</div>
+        </div>
+        <div class='artist secondary'>{{artist}}</div>
+    </div>
+    <div class='buy-button button-style-one'>
+        <span class="buy-button-price">{{price}}</span>
+        {{#purchaseLabel}}
+        <span class="buy-button-action">{{purchaseLabel}}</span>
+        {{/purchaseLabel}}
+    </div>
+</script>
+<script id="tate_navbar_template" type="text/html">
+    <div class="navbar-music">
+        <div class="navbar-music-arrow left-large-arrow"/>
+        <div class="navbar-logo font-header-books"
+data-i18n="dmusic_gp_music" />
+    </div>
+    <div class="navbar-center">
+        <div class="search-container">
+            <div class="search-row">
+                <input type="text" name="search-input"
+contentEditable="true" class="search-input" spellcheck="false"
+autocomplete="off"
+data-i18n="[placeholder]dmusic_gp_search_music_store"></input>
+                <div class="searchinputtail">
+                    <div class="search-icon"/>
+                </div>
+            </div>
+            <div class="perform-search button-style-three
+font-search-button"><div class="perform-search-inner"/></div>
+            <div class="search-cancel button-style-three
+font-search-button" data-i18n="dmusic_gp_search_cancel"></div>
+        </div>
+    </div>
+    <div class="navbar-library">
+        <div class="navbar-library-text font-standard-header"
+data-i18n="dmusic_gp_library"/>
+        <div class="navbar-library-arrow right-large-arrow"/>
+    </div>
+</script>
+<script id="tate_storefront_template" type="text/html">
+    <div class="campaign-top-promotions-top-border" />
+    <div id="campaign-top-promotions">
+    </div>
+    <div id="storefront-body">
+        <div id="storefront-body-top">
+            <div id="campaign-seasonal-promotions">
+
+            </div>
+            <div id="top-right-navlist">
+                <div class='storefront-nav-item font-category-header'
+destination='bestsellers' data-i18n="dmusic_gp_best_sellers" />
+                <div class='storefront-nav-item font-category-header'
+destination='newreleases' data-i18n="dmusic_gp_new_releases" />
+                <div class='storefront-nav-item font-category-header'
+destination='genres' data-i18n="dmusic_gp_genres" />
+            </div>
+        </div>
+        <div class='gradient-separator'></div>
+        <div id="storefront-body-center">
+
+        </div>
+        <div id='recommendation-separator'
+class='gradient-separator-full-width invisible'></div>
+        <div id="campaign-body-promotions">
+
+        </div>
+    </div>
+</script>
+<script id="tate_results_tab_view_template" type="text/html">
+    <div class="results-header">
+        <div class="results-left-header">
+            <div class='results-title font-store-widget-header'>
+                {{title}}
+            </div>
+            {{#refine}}
+            <div class='refine-results font-store-widget-header-subtext'>
+                <div class='refine-down-arrow'></div>
+                <div class='refine-results-title'
+data-i18n="dmusic_gp_all_genres"/>
+            </div>
+            {{/refine}}
+        </div>
+        <div class='tab-bar'>
+        {{#tabs}}
+            <div class='tab font-toggle'>
+                {{name}}
+            </div>
+        {{/tabs}}
+        </div>
+    </div>
+    <div class='tab-content'>
+
+    </div>
+</script>
+<script id="tate_campaigntrack_template" type="text/html">
+    <img class='album-art' />
+    <div class='shoveler-content'>
+        <div class='item-title font-block-primary-text'>{{title}}</div>
+        <div class='artist font-block-secondary-text'>{{artist}}</div>
+        <div class='tertiary play-sample'>
+            <div class='play-button'/>
+            <div class='play-text font-block-secondary-text'
+data-i18n="dmusic_gp_play_sample" />
+        </div>
+        <div class='buy-button button-style-three font-button'>
+            <span class="buy-button-price">{{displayPrice}}</span>
+            {{#purchaseLabel}}
+            <span class="buy-button-action">{{purchaseLabel}}</span>
+            {{/purchaseLabel}}
+        </div>
+    </div>
+</script>
+<script id="tate_campaignalbum_template" type="text/html">
+    <img class='album-art' />
+    <div class='shoveler-content'>
+        <div class='item-title font-block-primary-text'>{{title}}</div>
+        <div class='artist font-block-secondary-text'>{{artist}}</div>
+        <div class='item-summary-review-row'>
+            <div class="stars-container">
+                <div class="stars stars-empty"/>
+                <div class="stars stars-full" style="width: {{starPercent}}%"/>
+            </div>
+            <div class="review-count font-block-secondary-text">
+                ({{totalReviewCount}})
+            </div>
+        </div>
+        <div class='buy-button button-style-three font-button'>
+            <span class="buy-button-price">{{displayPrice}}</span>
+            {{#purchaseLabel}}
+            <span class="buy-button-action">{{purchaseLabel}}</span>
+            {{/purchaseLabel}}
+        </div>
+    </div>
+</script>
+<script id="multi_item_shoveler_template" type="text/html">
+    <div class="shoveler-header">
+        <div class="shoveler-title font-store-widget-header">{{title}}</div>
+        <div class="shoveler-title-spacer"/>
+        <div class="shoveler-see-all font-blue-text-button">{{seeAllText}}</div>
+    </div>
+    <div class="shoveler-items">
+
+    </div>
+</script>
+
+        <script type="text/javascript" src="/jquery.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/AjaxRequest.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/LogUtility.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/CatchGlobalErrors.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/ActionQueue.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/StringFormatter.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/BatchJobRunnerFactory.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/PromiseChain.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/MetadataProcessor.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/EventDispatcher.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/SimpleObjectCache.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_utilities/LocalStorageObjectCache.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/UserNotify.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_adapter/RestStorageInterface.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_adapter/CirrusAdapterFactory.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_adapter/MediaPlayerAdapterInterface.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/user_notify_modules/AuthorizeUserNotifyMod.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/user_notify_modules/CirrusNotifyMod.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/user_notify_modules/DownloadNotifyMod.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/user_notify_modules/NowPlayingNotifyMod.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/user_notify_modules/SyncNotifyMod.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/SchedulerService.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/DataStoreService.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/IndexedDbDataStore.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/WebSqlDataStore.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/ScratchPad.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/CirrusReporter.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/BroadcastEventServiceFactory.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/StorageManager.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/SyncServiceBackendInterface.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/SyncServiceBackend.js"></script>
+<script type="text/javascript"
+src="/../RetailCirrusCommonMason/browser-scripts/source/dmusic_common/dmusic_common_services/SyncService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/modulr.sync.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/underscore.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/backbone.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/il8next.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/iscroll.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/mustache.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_3rdparty/scrollwidget.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_i18n-en_US/strings.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store_i18n-en_US/DateFormatter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/underscore.mixins.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/version.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Purchasable.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Album.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Artist.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Genre.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/GenreHierarchy.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Track.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Campaign.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/StorefrontCampaigns.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/StorefrontRecommendations.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Categories.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Video.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Photo.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/ResultModelFactory.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Review.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/models/Tweet.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/errors/CirrusError.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/errors/CirrusReporter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/errors/PurchaseErrorModule.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/Default.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/iOS.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/Tate.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/Otter2.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/Thor.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/themes/Jem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ZingParser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/CirrusParser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/CampaignsParser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/XMLUtils.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ResponseParser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/RequestFactory.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/CampaignModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/CirrusModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ZingModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/MC2ModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/MC2Parser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ReviewsModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ReviewsParser.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/net/ModelRequest.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/android.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/MockAndroidBridge.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/iOSBridge.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/ios.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/DefaultBridge.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/environment/initialize.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/BaseController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/AlbumDetailController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/ArtistDetailController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/GenresController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/ResultsTabController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/ResultsTableController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/StorefrontController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/MusicStorefrontController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/NavbarController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/PurchaseController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/AccountValidationController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/controllers/ReviewsController.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/TabView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/RowView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/TrackRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/AlbumRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ArtistRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/SocialRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/PageableResultsTableView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ResultsTableView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/SearchTableView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ResultsTabView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/RefinePopup.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ModalDialog.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/PhotoOverlayView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ResultsTabViewFactory.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/Shoveler.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ScrollView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/BaseShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/AlbumShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/TrackShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/ArtistShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/VideoShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/common/PhotoShovelerItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/campaigns/SingleItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/campaigns/MultiItem.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/campaigns/Recommended.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/purchase/PurchaseView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/albumdetail/AlbumDetailView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/albumdetail/HeaderView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/albumdetail/TrackRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/artistdetail/ArtistDetailView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/reviews/ReviewsView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/reviews/ReviewsHeader.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/reviews/ReviewsList.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/artistdetail/HeaderView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/genres/GenresView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/genres/GenreRow.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/StorefrontBase.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/MusicStorefrontView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/NavbarView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/SuggestionsView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/PhoneStorefrontView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/TateStorefrontView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/store/Notifications.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/utility/PerformanceView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/BaseView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/views/BackgroundWrappedView.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/routers/StoreRouter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/MessagingService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/ProfileService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/CredentialsService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/PurchaseService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/CirrusPurchaseClient.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/services/BroadcastService.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/AppCache.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/OfflineHelper.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/BackbonePatches.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/i18nExtensions.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/DateFormatter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/ImageFormatter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/ControllerCache.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/RouteStack.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/Metrics.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/GlobalMessageHandlers.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/Spy.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/ImageQueue.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/util/DOMUtils.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/Mixin.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/CirrusAdapter.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/SamplePlayback.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/Touchable.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/BuyButton.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/mixins/ImageLoader.js"></script>
+<script type="text/javascript"
+src="/browser-scripts/source/dmusic_device_store/startup.js"></script>
+
+
+        <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                startup();
+
+(function (e) {
+    e.setAttribute("src",
+"http://ivop.desktop.amazon.com:9999/target/target-script-min.js#anonymous");
+    document.getElementsByTagName("body")[0].appendChild(e);
+})(document.createElement("script"));
+
+            });
+        </script>
+
+    </head>
+
+    <body>
+    </body>
+</html>

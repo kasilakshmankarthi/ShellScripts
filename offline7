@@ -1,0 +1,1 @@
+echo 7f > /sys/power/cpuhp/set_online_cpu

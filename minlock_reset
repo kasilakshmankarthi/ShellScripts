@@ -1,0 +1,7 @@
+cd /sys/devices/system/cpu/cpufreq
+
+for p in policy?; do 
+    cd $p
+    cat cpuinfo_min_freq > scaling_min_freq
+    cd ..
+done

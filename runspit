@@ -1,0 +1,32 @@
+#if [ $# -lt 2 ]; then
+#echo Usage: launchboost process_name boost_time
+#exit;
+#fi
+
+pname="com.pubg.krmobile"
+tname="Thread-3" 
+
+#cd /dev/stune/top-app
+#echo 0 > schedtune.boost
+#echo 50 > schedtune.boost
+
+pid=''
+while
+    test "$pid" == ""
+do
+    pid=`pidof $pname`
+done
+echo found pid=$pid
+tid=''
+while
+    test "$tid" == ""
+do
+    tid=`ps -T -p $pid | egrep " $tname\$" | head -1 | awk '{print $3}'`
+done
+echo found tid=$tid
+
+#echo Running simpleperf stat on TID
+#simpleperf stat -t $tid -o /data/local/tmp/perf.stat.txt
+#cat /data/local/tmp/perf.stat.txt
+
+/data/local/tmp/bin/spit -a $tid -d /sdcard/traces/ -m 32 -t 

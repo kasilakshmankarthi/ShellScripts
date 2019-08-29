@@ -1,0 +1,19 @@
+cd /sys/devices/system/cpu/cpufreq
+
+for p in policy?; do 
+    echo $p
+    cd $p
+    echo -n "scaling_max_freq: "
+    cat scaling_max_freq
+    echo -n "scaling_min_freq: "
+    cat scaling_min_freq
+    cd ..
+done
+
+echo
+echo -n "offline: "
+cat /sys/devices/system/cpu/offline
+
+echo
+echo -n "top-app/schedtune.boost: "
+cat /dev/stune/top-app/schedtune.boost

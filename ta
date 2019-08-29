@@ -1,0 +1,2 @@
+echo Setting top-app/schedtune.boost = $1
+echo $1 > /dev/stune/top-app/schedtune.boost

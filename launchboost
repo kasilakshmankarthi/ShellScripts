@@ -1,0 +1,24 @@
+if [ $# -lt 2 ]; then
+echo Usage: launchboost process_name boost_time
+exit;
+fi
+
+cd /dev/stune/top-app
+echo 0 > schedtune.boost
+
+process=$1
+pid=''
+boosttime=$2
+
+while
+    test "$pid" == ""
+do
+    pid=`pidof $process`
+done
+echo Detected app. Boosting for $boosttime seconds.
+
+echo 50 > schedtune.boost
+
+sleep $boosttime
+
+echo 0 > schedtune.boost
